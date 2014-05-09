@@ -31,6 +31,10 @@ LOG = logging.getLogger(__name__)
 STRATEGY = network_strategy.STRATEGY
 
 
+def _is_default_route(route):
+    return route.value == 0
+
+
 def _make_network_dict(network, fields=None):
     shared_net = STRATEGY.is_parent_network(network["id"])
     res = {"id": network["id"],
@@ -39,11 +43,12 @@ def _make_network_dict(network, fields=None):
            "admin_state_up": None,
            "ipam_strategy": network.get("ipam_strategy"),
            "status": "ACTIVE",
-           "shared": shared_net,
-           #TODO(mdietz): this is the expected return. Then the client
-           #              foolishly turns around and asks for the entire
-           #              subnet list anyway! Plz2fix
-           "subnets": [s["id"] for s in network.get("subnets", [])]}
+           "shared": shared_net}
+    if fields and "all_subnets" in fields:
+        res["subnets"] = [_make_subnet_dict(s)
+                          for s in network.get("subnets", [])]
+    else:
+        res["subnets"] = [s["id"] for s in network.get("subnets", [])]
     return res
 
 
@@ -69,7 +74,7 @@ def _pools_from_cidr(cidr):
     return pools
 
 
-def _make_subnet_dict(subnet, default_route=None, fields=None):
+def _make_subnet_dict(subnet, fields=None):
     dns_nameservers = [str(netaddr.IPAddress(dns["ip"]))
                        for dns in subnet.get("dns_nameservers")]
     net_id = STRATEGY.get_parent_network(subnet["network_id"])
@@ -101,7 +106,7 @@ def _make_subnet_dict(subnet, default_route=None, fields=None):
     res["gateway_ip"] = None
     for route in subnet["routes"]:
         netroute = netaddr.IPNetwork(route["cidr"])
-        if netroute.value == default_route.value:
+        if _is_default_route(netroute.value):
             res["gateway_ip"] = route["gateway"]
             break
     return res
@@ -176,11 +181,10 @@ def _make_ports_list(query, fields=None):
     return ports
 
 
-def _make_subnets_list(query, default_route=None, fields=None):
+def _make_subnets_list(query, fields=None):
     subnets = []
     for subnet in query:
-        subnet_dict = _make_subnet_dict(subnet, default_route=default_route,
-                                        fields=fields)
+        subnet_dict = _make_subnet_dict(subnet, fields=fields)
         subnets.append(subnet_dict)
     return subnets
 
