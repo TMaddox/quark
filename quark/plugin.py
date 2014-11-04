@@ -237,6 +237,10 @@ class Plugin(neutron_plugin_base_v2.NeutronPluginBaseV2,
         return ip_addresses.update_ip_address(context, id, ip_address)
 
     @sessioned
+    def deallocate_ip_address(self, context, id):
+        return ip_addresses.deallocate_ip_address(context, id)
+
+    @sessioned
     def create_port(self, context, port):
         self._fix_missing_tenant_id(context, port["port"])
         return ports.create_port(context, port)

@@ -71,6 +71,12 @@ class IpAddressesController(wsgi.Controller):
         except exceptions.NotFound:
             raise webob.exc.HTTPNotFound()
 
+    def delete(self, request, id):
+        try:
+            self._plugin.deallocate_ip_address(request.context, id)
+        except exceptions.NotFound:
+            raise webob.exc.HTTPNotFound()
+
 
 class Ip_addresses(object):
     """IP Addresses support."""

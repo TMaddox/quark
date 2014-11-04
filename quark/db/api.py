@@ -294,6 +294,11 @@ def ip_address_update(context, address, **kwargs):
     return address
 
 
+def ip_address_deallocate(context, address):
+    address['deallocated'] = 1
+    return address
+
+
 def ip_address_create(context, **address_dict):
     ip_address = models.IPAddress()
     address = address_dict.pop("address")

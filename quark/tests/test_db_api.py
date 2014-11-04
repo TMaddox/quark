@@ -89,6 +89,13 @@ class TestDBAPI(BaseFunctionalTest):
         except Exception as e:
             self.fail("Expected no exceptions: %s" % e)
 
+    def test_ip_address_deallocate(self):
+        addr = models.IPAddress(id="1", deallocated=False,
+                                address_type="fixed")
+        new_addr = db_api.ip_address_deallocate(self.context, addr)
+        self.assertTrue(new_addr['deallocated'])
+        self.assertEqual(new_addr['address_type'], None)
+
     def test_port_associate_ip(self):
         self.context.session.add = mock.Mock()
         mock_ports = [models.Port(id=str(x), network_id="2", ip_addresses=[])

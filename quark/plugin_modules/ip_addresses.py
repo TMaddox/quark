@@ -65,9 +65,12 @@ def validate_ports_on_network_and_same_segment(ports, network_id):
                                             msg="Segment id's do not match.")
 
 
-def _shared_ip_request(ip_address):
-    port_ids = ip_address.get('ip_address', {}).get('port_ids', [])
-    return len(port_ids) > 1
+def _shared_ip_request(ports):
+    return len(ports) > 1
+
+
+def _additional_ip_request(ports):
+    return len(ports) == 1 and len(ports[0].addresses) > 0
 
 
 def _can_be_shared(address_model):
@@ -75,10 +78,16 @@ def _can_be_shared(address_model):
     return not any(a.enabled for a in address_model.associations)
 
 
+def _compute_address_type(ports):
+    if _shared_ip_request(ports):
+        return ip_types.SHARED
+    elif _additional_ip_request(ports):
+        return ip_types.ADDITIONAL
+    return ip_types.FIXED
+
+
 def create_ip_address(context, body):
     LOG.info("create_ip_address for tenant %s" % context.tenant_id)
-    address_type = (ip_types.SHARED if _shared_ip_request(body)
-                    else ip_types.FIXED)
     ip_dict = body.get("ip_address")
     port_ids = ip_dict.get('port_ids', [])
     network_id = ip_dict.get('network_id')
@@ -118,6 +127,7 @@ def create_ip_address(context, body):
                                           net_id=network_id)
 
     validate_ports_on_network_and_same_segment(ports, network_id)
+    address_type = _compute_address_type(ports)
 
     # Shared Ips are only new IPs. Two use cases: if we got device_id
     # or if we got port_ids. We should check the case where we got port_ids
@@ -163,7 +173,6 @@ def update_ip_address(context, id, ip_address):
             raise exceptions.NotFound(
                 message="No IP address found with id=%s" % id)
 
-        ipam_driver = _get_ipam_driver_for_network(context, address.network_id)
         reset = ip_address['ip_address'].get('reset_allocation_time', False)
         if reset and address['deallocated'] == 1:
             if context.is_admin:
@@ -174,7 +183,6 @@ def update_ip_address(context, id, ip_address):
                 raise webob.exc.HTTPForbidden(detail=msg)
 
         port_ids = ip_address['ip_address'].get('port_ids')
-
         if port_ids:
             _raise_if_shared_and_enabled(ip_address, address)
             ports = db_api.port_find(context, tenant_id=context.tenant_id,
@@ -191,12 +199,36 @@ def update_ip_address(context, id, ip_address):
             LOG.info("Updating IP address, %s, to only be used by the"
                      "following ports:  %s" % (address.address_readable,
                                                [p.id for p in ports]))
-            new_address = db_api.update_port_associations_for_ip(context,
-                                                                 ports,
-                                                                 address)
+            address = db_api.update_port_associations_for_ip(context, ports,
+                                                             address)
         else:
             if port_ids is not None:
-                ipam_driver.deallocate_ip_address(
-                    context, address)
-            return v._make_ip_dict(address)
-    return v._make_ip_dict(new_address)
+                raise exceptions.BadRequest(
+                    message="Unable to remove IP from all ports. To deallocate"
+                            " this IP address, please DELETE.")
+    return v._make_ip_dict(address)
+
+
+def _deallocate_ip_address(context, address):
+    if address['address_type'] in [ip_types.SHARED, ip_types.ADDITIONAL]:
+        db_api.port_disassociate_ip(context,
+                                    address['ports'],
+                                    address)
+        db_api.ip_address_deallocate(context, address)
+    else:
+        raise exceptions.BadRequest("Cannot deallocate a primary IP for"
+                                    " a port. You must delete the port in"
+                                    " order to deallocate this IP address.")
+
+
+def deallocate_ip_address(context, id):
+    LOG.info("deallocate_ip_address %s for tenant %s" %
+             (id, context.tenant_id))
+    with context.session.begin():
+        address = db_api.ip_address_find(
+            context, id=id, tenant_id=context.tenant_id, scope=db_api.ONE)
+        if address:
+            _deallocate_ip_address(context, address)
+        else:
+            raise exceptions.NotFound(
+                message="No IP address found with id=%s" % id)

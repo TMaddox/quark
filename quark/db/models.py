@@ -179,6 +179,7 @@ class IPAddress(BASEV2, models.HasId):
         if val:
             self.deallocated_at = timeutils.utcnow()
             self.allocated_at = None
+            self.address_type = None
 
     # TODO(jkoelker) update the expression to use the jointable as well
     @deallocated.expression

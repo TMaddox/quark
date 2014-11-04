@@ -592,7 +592,6 @@ class QuarkIpam(object):
 
     def deallocate_ip_address(self, context, address):
         address["deallocated"] = 1
-        address["address_type"] = None
         payload = dict(used_by_tenant_id=address["used_by_tenant_id"],
                        ip_block_id=address["subnet_id"],
                        ip_address=address["address_readable"],

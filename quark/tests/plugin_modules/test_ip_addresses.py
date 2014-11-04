@@ -509,16 +509,42 @@ class TestQuarkUpdateIPAddress(test_quark_plugin.TestQuarkPlugin):
                                                      ip_address)
             self.assertEqual(response['port_ids'], [])
 
-    def test_update_ip_address_empty_ports_delete(self):
+    def test_update_ip_address_empty_ports_raises(self):
         port = dict(id=1, network_id=2, ip_addresses=[])
         ip = dict(id=1, address=3232235876, address_readable="192.168.1.100",
                   subnet_id=1, network_id=2, version=4)
         with self._stubs(ports=[port], addr=ip, addr_ports=True):
             ip_address = {'ip_address': {'port_ids': []}}
-            response = self.plugin.update_ip_address(self.context,
-                                                     ip['id'],
-                                                     ip_address)
-            self.assertEqual(response['port_ids'], [])
+            with self.assertRaises(exceptions.BadRequest):
+                self.plugin.update_ip_address(self.context,
+                                              ip['id'],
+                                              ip_address)
+
+
+@mock.patch("quark.plugin_modules.ip_addresses.db_api")
+class TestQuarkDeallocateIPAddress(test_quark_plugin.TestQuarkPlugin):
+    def test_deallocate_ip_address(self, mock_db_api):
+        ports = [dict(id=1, network_id=2, ip_addresses=[]),
+                 dict(id=2, network_id=2, ip_addresses=[])]
+        ip = dict(id=1, address=3232235876, address_readable="192.168.1.100",
+                  subnet_id=1, network_id=2, version=4)
+        port_models = [models.Port(**p) for p in ports]
+        addr_model = models.IPAddress(**ip)
+        addr_model.ports = port_models
+        mock_db_api.ip_address_find.return_value = addr_model
+
+        self.plugin.deallocate_ip_address(self.context, ip['id'])
+
+        mock_db_api.port_disassociate_ip.assert_called_once_with(
+            self.context, addr_model.ports, addr_model)
+        mock_db_api.ip_address_deallocate.assert_called_once_with(
+            self.context, addr_model)
+
+    def test_deallocate_ip_address_none_found(self, mock_db_api):
+        mock_db_api.ip_address_find.return_value = None
+
+        with self.assertRaises(exceptions.NotFound):
+            self.plugin.deallocate_ip_address(self.context, "1")
 
 
 class TestQuarkGetIpAddress(test_quark_plugin.TestQuarkPlugin):
